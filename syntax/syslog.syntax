@@ -1,0 +1,2 @@
+/^(?P<date>\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>[^ ]+) (?P<service>[^:]+):/ date: green, hostname: yellow, service: bold white
+/^/

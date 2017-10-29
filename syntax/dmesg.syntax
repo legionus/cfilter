@@ -1,0 +1,2 @@
+/^(?P<timestamp>\[\d+\.\d+\]) (?P<cmd>[^:]+):/ timestamp: green, cmd: yellow
+/^/

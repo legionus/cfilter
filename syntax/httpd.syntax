@@ -1,0 +1,3 @@
+/^(?P<date>\[.+?\]) (?P<info>\[.+?\]) (?P<client>\[.+?\])?/ date: green, info: yellow, client: bold white
+/^(?P<date>\[.+?\]) (?P<err>\[error\]) (?P<client>\[.+?\])?/ date: green, err: red, client: bold white
+/^/
