@@ -1,0 +1,16 @@
+#sample commands to colorize output from gcc
+
+#whole string colorization
+/^(?P<file>.*?:)(?P<line>.*:\d+:.*)/ file: cyan, line: red bold
+/^(?P<file>.*?:)(?P<warning>[0-9]+:.*warning.*)/ file: cyan, warning: yellow
+/^(?P<file>.*?:)(?P<error>.*:[0-9]+:.*error.*)/ file: cyan, error: red bold
+
+#substring colorization
+/:(?P<num>[0-9]+?):/ num: red
+/(?P<file>`.+?')/ file: cyan
+
+#joke: colorize worlds ALT Linux
+/(?P<alt>ALT.*?Linux)/ alt: cyan bold
+
+# rest
+/^/
