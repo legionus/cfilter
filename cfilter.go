@@ -93,7 +93,7 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 }
 
 func errorf(format string, v ...interface{}) {
-	fmt.Fprintf(os.Stderr, "%s: Error: ", prog)
+	fmt.Fprintf(os.Stderr, "%s: ERROR: ", prog)
 	fmt.Fprintf(os.Stderr, format, v...)
 	fmt.Fprintf(os.Stderr, "\n")
 }
@@ -103,20 +103,23 @@ func fatal(format string, v ...interface{}) {
 	os.Exit(1)
 }
 
-func parsePattern(line string) (Pattern, error) {
+func parsePattern(filename string, num int, line string) (Pattern, error) {
 	line = strings.TrimSpace(line)
 
-	last := strings.LastIndex(line, string(line[0]))
+	if line[0] != '/' {
+		return Pattern{}, fmt.Errorf("%s:%d: bad format: unexpected begin of regular expression", filename, num)
+	}
+	last := strings.LastIndexByte(line, '/')
 	if last == -1 {
-		return Pattern{}, fmt.Errorf("bad format: can not find end of regular expression")
+		return Pattern{}, fmt.Errorf("%s:%d: bad format: can not find end of regular expression", filename, num)
 	}
 	if last == 0 {
-		return Pattern{}, fmt.Errorf("bad format: empty regular expression")
+		return Pattern{}, fmt.Errorf("%s:%d: bad format: empty regular expression", filename, num)
 	}
 
 	re, err := regexp.Compile(line[1:last])
 	if err != nil {
-		return Pattern{}, fmt.Errorf("bad format: %v", err)
+		return Pattern{}, fmt.Errorf("%s:%d: %v", filename, num, err)
 	}
 
 	pattern := Pattern{
@@ -131,7 +134,7 @@ func parsePattern(line string) (Pattern, error) {
 		}
 		pair := strings.Split(s, ":")
 		if len(pair) != 2 {
-			return Pattern{}, fmt.Errorf("bad format: can not parse group %d", i)
+			return Pattern{}, fmt.Errorf("%s:%d: bad format: can not parse group %d", filename, num, i)
 		}
 		names[strings.TrimSpace(pair[0])] = ParseColorize(pair[1])
 	}
@@ -156,15 +159,17 @@ func parsePattern(line string) (Pattern, error) {
 	return pattern, nil
 }
 
-func readPatternsFromFile(rd io.Reader) ([]Pattern, error) {
+func readPatternsFromFile(filename string, rd io.Reader) ([]Pattern, error) {
 	var (
 		line      string
 		readerErr error
 		patterns  []Pattern
 	)
-	reader := bufio.NewReader(rd)
+	lineNum := 0
+	reader  := bufio.NewReader(rd)
 
 	for readerErr == nil {
+		lineNum++
 		line, readerErr = reader.ReadString('\n')
 
 		if readerErr != nil && readerErr != io.EOF {
@@ -177,7 +182,7 @@ func readPatternsFromFile(rd io.Reader) ([]Pattern, error) {
 			continue
 		}
 
-		pattern, err := parsePattern(line)
+		pattern, err := parsePattern(filename, lineNum, line)
 		if err != nil {
 			return patterns, err
 		}
@@ -224,6 +229,9 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 			for i, group := range pattern.Groups {
 				for _, match := range res {
 					pos := group.Number * 2
+					if match[pos] == match[pos+1] {
+						continue
+					}
 					positions = append(positions,
 						&LinePosition{
 							Kind:     LinePositionStartKind,
@@ -245,6 +253,7 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 			sort.Sort(positions)
 
 			lineOffset := 0
+			prevEscape := ""
 
 			for _, pos := range positions {
 				if lineOffset < pos.Offset {
@@ -291,7 +300,13 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 					for k, v := range lineProperties {
 						props += fmt.Sprintf("%d;", Property(k, v > 0))
 					}
-					wr.Write([]byte(fmt.Sprintf("%s%s%d;%dm", AnsiStart, props, foundFG, foundBG)))
+
+					escape := fmt.Sprintf("%s%s%d;%dm", AnsiStart, props, foundFG, foundBG)
+
+					if prevEscape != escape {
+						wr.Write([]byte(escape))
+						prevEscape = escape
+					}
 				}
 			}
 			wr.Write(line[lineOffset:len(line)])
@@ -329,15 +344,15 @@ func main() {
 		}
 		defer fd.Close()
 
-		patterns, err = readPatternsFromFile(fd)
+		patterns, err = readPatternsFromFile(*fileFlag, fd)
 		if err != nil {
 			fatal("%v", err)
 		}
 		fd.Close()
 	}
 
-	for _, s := range *regexpsFlag {
-		pattern, err := parsePattern(s)
+	for i, s := range *regexpsFlag {
+		pattern, err := parsePattern("Arg", i+1, s)
 		if err != nil {
 			fatal("%v", err)
 		}
