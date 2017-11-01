@@ -1,0 +1,5 @@
+/^(?P<comment>#.*)/ comment: blue bold
+/^(?P<file>.*?\.go):/ file: cyan
+/\.go:(?P<num>[0-9]+?):/ num: red
+/(?P<manyerrs>too many errors)/ manyerrs: red bold
+/^/

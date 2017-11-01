@@ -1,0 +1,9 @@
+/^(?P<comment>#.*)/ comment: blue bold
+/^(?P<file>.*\.go):(?P<num>[0-9]+):?/ file: cyan, num: red
+/^--- (?P<fail>FAIL): / fail: red bold
+/^--- (?P<fail>PASS): / fail: green bold
+/^(?P<line>\?\s+.*)/ line: bright black
+/^(?P<status>ok)\s+(?P<module>.*?)\s+(?P<time>\d+.*)/ status: green, module: cyan, time: yellow
+/^(?P<fail>FAIL)\s+(?P<module>.*?)\s+(?P<time>\d+.*)/ fail: red bold, module: cyan, time: yellow
+/^(?P<pass>PASS)/ pass: green bold
+/^/
