@@ -1,2 +1,11 @@
+#general colorizations
 /^(?P<date>\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>[^ ]+) (?P<service>[^:]+):/ date: green, hostname: yellow, service: bold white
+
+# important errors
+/^(\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) ([^ ]+) (?P<kern>.*kernel:.*)/ kern: red
+/^(\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) ([^ ]+) (?P<PAM>.*pam_.*:.*)/ PAM: green
+/^(\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) ([^ ]+) ([^:]+): (?P<fail>.*[Ff]ailed.*)/ fail: red bold
+/^(\w{3}[ ]+\d+ \d{2}:\d{2}:\d{2}) ([^ ]+) ([^:]+): (?P<IOERR>.*I.O\s+error.*)/ IOERR: red bold
+
+# all other
 /^/
