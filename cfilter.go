@@ -13,26 +13,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 
-	"github.com/spf13/pflag"
-)
-
-const (
-	version = "1.0"
+	"github.com/legionus/getopt"
 )
 
 var (
-	helpFlag       = pflag.BoolP("help", "h", false, "show this text and exit")
-	versionFlag    = pflag.BoolP("version", "V", false, "output version information and exit")
-	bufferSizeFlag = pflag.IntP("bufsize", "", 4096, "buffer size which used to read line")
-	regexpsFlag    = pflag.StringSliceP("regexp", "e", nil, "use 'PATTERN' for matching")
-	fileFlag       = pflag.StringP("file", "f", "", "obtain PATTERN from FILE")
-
-	prog = ""
+	prog       = ""
+	version    = "1.0"
+	bufferSize = 4096
 )
 
 type Group struct {
@@ -66,22 +62,33 @@ func (a LinePositions) Len() int           { return len(a) }
 func (a LinePositions) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a LinePositions) Less(i, j int) bool { return a[i].Offset < a[j].Offset }
 
-func showUsage() {
+func showUsage(*getopt.Option, getopt.NameType, string) error {
 	fmt.Fprintf(os.Stdout, `
 Usage: %[1]s [options] [FILE...]
    or: %[1]s [options] -e PATTERN ... [FILE...]
+   or: %[1]s [options] -e PATTERN ... -c -- [COMMAND...]
 
 This utility is a simple filter, you can use to colorize output of any program.
 
 Options:
-%s
+  --bufsile=SIZE         buffer size which used to read line (default: %d);
+  -c, --command          run COMMAND and filter output;
+  -1, --stdout           filter stdout of COMMAND;
+  -2, --stderr           filter stderr of COMMAND;
+  -e, --regexp=PATTERN   use PATTERN for matching;
+  -f, --file=FILE        obtain PATTERN from FILE;
+  -V, --version          print program version and exit;
+  -h, --help             show this text and exit.
+
 Report bugs to author.
 
 `,
-		prog, pflag.CommandLine.FlagUsages())
+		prog, bufferSize)
+	os.Exit(0)
+	return nil
 }
 
-func showVersion() {
+func showVersion(*getopt.Option, getopt.NameType, string) error {
 	fmt.Fprintf(os.Stdout, `%s version %s
 Written by Alexey Gladkov.
 
@@ -90,6 +97,8 @@ This is free software; see the source for copying conditions.  There is NO
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 `,
 		prog, version)
+	os.Exit(0)
+	return nil
 }
 
 func errorf(format string, v ...interface{}) {
@@ -106,6 +115,9 @@ func fatal(format string, v ...interface{}) {
 func parsePattern(filename string, num int, line string) (Pattern, error) {
 	line = strings.TrimSpace(line)
 
+	if len(line) == 0 {
+		return Pattern{}, fmt.Errorf("%s:%d: bad format: empty rule", filename, num)
+	}
 	if line[0] != '/' {
 		return Pattern{}, fmt.Errorf("%s:%d: bad format: unexpected begin of regular expression", filename, num)
 	}
@@ -113,7 +125,7 @@ func parsePattern(filename string, num int, line string) (Pattern, error) {
 	if last == -1 {
 		return Pattern{}, fmt.Errorf("%s:%d: bad format: can not find end of regular expression", filename, num)
 	}
-	if last == 0 {
+	if last <= 1 {
 		return Pattern{}, fmt.Errorf("%s:%d: bad format: empty regular expression", filename, num)
 	}
 
@@ -128,7 +140,7 @@ func parsePattern(filename string, num int, line string) (Pattern, error) {
 
 	names := map[string]Colorize{}
 
-	for i, s := range strings.Split(line[last+1:len(line)], ",") {
+	for i, s := range strings.Split(line[last+1:], ",") {
 		if len(s) == 0 {
 			continue
 		}
@@ -166,7 +178,7 @@ func readPatternsFromFile(filename string, rd io.Reader) ([]Pattern, error) {
 		patterns  []Pattern
 	)
 	lineNum := 0
-	reader  := bufio.NewReader(rd)
+	reader := bufio.NewReader(rd)
 
 	for readerErr == nil {
 		lineNum++
@@ -198,7 +210,7 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 		line      []byte
 		readerErr error
 	)
-	reader := bufio.NewReaderSize(rd, *bufferSizeFlag)
+	reader := bufio.NewReaderSize(rd, bufferSize)
 
 	lineColorFG := make([]int, len(patterns))
 	lineColorBG := make([]int, len(patterns))
@@ -309,7 +321,7 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 					}
 				}
 			}
-			wr.Write(line[lineOffset:len(line)])
+			wr.Write(line[lineOffset:])
 		} else if lineMatches {
 			wr.Write(line)
 		}
@@ -318,40 +330,165 @@ func processFile(patterns []Pattern, rd io.Reader, wr io.Writer) error {
 	return nil
 }
 
+func syncStdStreams() {
+	os.Stdout.Sync()
+	os.Stderr.Sync()
+}
+
+type CommandFilter struct {
+	Patterns []Pattern
+	Stdout   bool
+	Stderr   bool
+}
+
+func processCommand(filter *CommandFilter, name string, args ...string) {
+	var wg sync.WaitGroup
+
+	cmd := exec.Command(name, args...)
+
+	if filter.Stdout {
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			fatal("%v\n", err)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := processFile(filter.Patterns, stdout, os.Stdout)
+			syncStdStreams()
+			if err != nil {
+				fatal("%v\n", err)
+			}
+		}()
+	} else {
+		cmd.Stdout = os.Stdout
+	}
+
+	if filter.Stderr {
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			fatal("%v\n", err)
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := processFile(filter.Patterns, stderr, os.Stderr)
+			syncStdStreams()
+			if err != nil {
+				fatal("%v\n", err)
+			}
+		}()
+	} else {
+		cmd.Stderr = os.Stderr
+	}
+
+	if err := cmd.Start(); err != nil {
+		fatal("%v\n", err)
+	}
+
+	wg.Wait()
+
+	retCode := 0
+	if err := cmd.Wait(); err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				retCode = status.ExitStatus()
+			}
+		} else {
+			syncStdStreams()
+			errorf("%v\n", err)
+			retCode = 1
+		}
+	}
+	os.Exit(retCode)
+}
+
 func main() {
+	var (
+		cmdStdout    bool
+		cmdStderr    bool
+		cmdFilter    bool
+		regexps      []string
+		patternsFile string
+	)
+	opts := &getopt.Getopt{
+		AllowAbbrev: true,
+		Options: []getopt.Option{
+			{'h', "help", getopt.NoArgument,
+				showUsage,
+			},
+			{'V', "version", getopt.NoArgument,
+				showVersion,
+			},
+			{getopt.NoShortName, "bufsize", getopt.RequiredArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) (err error) {
+					bufferSize, err = strconv.Atoi(v)
+					return
+				},
+			},
+			{'f', "file", getopt.RequiredArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) (err error) {
+					info, err := os.Stat(v)
+					if err != nil {
+						return
+					}
+					if info.IsDir() {
+						return fmt.Errorf("filename required")
+					}
+					patternsFile = v
+					return
+				},
+			},
+			{'e', "regexp", getopt.RequiredArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) error {
+					regexps = append(regexps, v)
+					return nil
+				},
+			},
+			{'c', "command", getopt.NoArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) error {
+					cmdFilter = true
+					return nil
+				}},
+			{'1', "stdout", getopt.NoArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) error {
+					cmdStdout = true
+					return nil
+				},
+			},
+			{'2', "stderr", getopt.NoArgument,
+				func(o *getopt.Option, t getopt.NameType, v string) error {
+					cmdStderr = true
+					return nil
+				},
+			},
+		},
+	}
+
 	prog = filepath.Base(os.Args[0])
-	pflag.Usage = showUsage
-
-	pflag.Parse()
-	args := pflag.Args()
-
-	if *helpFlag {
-		pflag.Usage()
-		os.Exit(0)
+	if err := opts.Parse(os.Args); err != nil {
+		fatal("%v", err)
 	}
-
-	if *versionFlag {
-		showVersion()
-		os.Exit(0)
-	}
+	args := opts.Args()
 
 	patterns := []Pattern{}
 
-	if len(*fileFlag) > 0 {
-		fd, err := os.Open(*fileFlag)
+	if len(patternsFile) > 0 {
+		fd, err := os.Open(patternsFile)
 		if err != nil {
 			fatal("%v", err)
 		}
 		defer fd.Close()
 
-		patterns, err = readPatternsFromFile(*fileFlag, fd)
+		patterns, err = readPatternsFromFile(patternsFile, fd)
 		if err != nil {
 			fatal("%v", err)
 		}
 		fd.Close()
 	}
 
-	for i, s := range *regexpsFlag {
+	for i, s := range regexps {
 		pattern, err := parsePattern("Arg", i+1, s)
 		if err != nil {
 			fatal("%v", err)
@@ -359,11 +496,32 @@ func main() {
 		patterns = append(patterns, pattern)
 	}
 
+	if len(patterns) == 0 {
+		fatal("patterns required")
+	}
+
+	if cmdFilter {
+		filter := &CommandFilter{
+			Patterns: patterns,
+			Stdout:   cmdStdout,
+			Stderr:   cmdStderr,
+		}
+		if len(args) > 1 {
+			processCommand(filter, args[0], args[1:]...)
+		} else {
+			processCommand(filter, args[0])
+		}
+		return
+	} else if cmdStdout {
+		fatal("option --stdout implies the --command")
+	} else if cmdStderr {
+		fatal("option --stderr implies the --command")
+	}
+
 	if len(args) == 0 {
 		if err := processFile(patterns, os.Stdin, os.Stdout); err != nil {
 			fatal("%v", err)
 		}
-		return
 	}
 
 	for _, filename := range args {
