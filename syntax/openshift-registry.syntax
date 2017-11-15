@@ -1,0 +1,5 @@
+/(?P<time>time="[^"]+?")/ time: blue
+/(?P<level>level=\S+?) / level: red
+/(?P<msg>msg=("(([^"]+\\")|\\"[^"]+|[^"])+"|[^"[:space:]]+)) / msg: green
+/(?P<status>status=[0-9]+) / status: yellow
+/^/
