@@ -1,2 +1,2 @@
-/^((?P<err>E[^ ]+?)|(?P<warn>W[^ ]+?)|(?P<info>[^ ]+?)) (?P<date>[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[ ]{2}) (?P<src>[0-9]+ [^ ]+\.go:[0-9]+\]) / err: red, warn: yellow, info: bright green, date: blue, src: bright black
+/^((?P<err>E[^ ]+?)|(?P<warn>W[^ ]+?)|(?P<info>[^ ]+?)) (?P<date>[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[ ]{2})[ ]+?(?P<src>[0-9]+ [^ ]+\.go:[0-9]+\]) / err: red, warn: yellow, info: bright green, date: blue, src: bright black
 /^/
