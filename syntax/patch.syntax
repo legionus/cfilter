@@ -1,0 +1,10 @@
+/^(?P<hunk>@@ .*)/ hunk: cyan
+/^(?P<lineadd>\+.*)/ lineadd: green
+/^(?P<linedel>\-.*)/ linedel: red
+
+/^(?P<header>diff --git .*)/ header: background red
+/^(?P<header>index [A-Za-z0-9]+\.\.[A-Za-z0-9]+ [0-9][0-9][0-9][0-9][0-9][0-9])/ header: background red
+/^(?P<filedel>\-\-\- .*)/ filedel: magenta
+/^(?P<fileadd>\+\+\+ .*)/ fileadd: magenta
+
+/^/
