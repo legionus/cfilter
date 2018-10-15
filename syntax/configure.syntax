@@ -1,0 +1,6 @@
+/^checking (for|if|whether|where|how to) (?P<target>.*)\.\.\. / target: bold white
+/^checking (?P<header>[^[:space:]]+\.h) usability\.\.\. / header: yellow
+/^checking (?P<header>[^[:space:]]+\.h) presence\.\.\. / header: yellow
+/\.\.\.( \(cached\))? (?P<yes>yes|done)\s*$/ yes: green
+/\.\.\. (?P<no>no)\s*$/ no: red
+/^/
